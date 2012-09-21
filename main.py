@@ -30,6 +30,21 @@ from google.appengine.ext.webapp import blobstore_handlers
 import models
 import utils
 
+def insert_details(context):
+    try:
+        current_session = auth.get_auth().get_user_by_session()
+        new_user_object = auth.get_auth().store.user_model.get_by_auth_token(current_session['user_id'], current_session['token'])[0]
+        username = new_user_object.auth_ids[0]
+        old_user_object = models.Account.all().filter('username =', username).fetch(1)[0].__dict__['_entity']
+
+        context['username'] = old_user_object['username']
+        context['is_admin'] = old_user_object['is_admin']
+        context['is_employee'] = old_user_object['is_employee']
+    except Exception, e:
+        logging.warning(e)
+        # Returns error message to self.response.write in the BaseHandler.dispatcher
+        # Currently no message is attached to the exceptions
+    
 
 def user_required(handler):
     """
@@ -91,6 +106,12 @@ class MainHandler(webapp2.RequestHandler):
         #    account.save()
 
         context = utils.get_context(self.request)
+        insert_details(context)
+        #if 'user' in self.request.GET:
+        #    new_user_object = self.auth.store.user_model.get_by_auth_id(self.request.GET['user'])
+        #    old_user_object = models.Account.all().filter('username =', self.request.GET['user']).fetch(1)[0].__dict__['_entity']
+        #    username = new_user_object.auth_ids[0]
+
         path = os.path.join(os.path.dirname(__file__), 'templates/home.html')
         self.response.out.write(template.render(path, context))
 
@@ -112,6 +133,7 @@ class MainHandler(webapp2.RequestHandler):
 class view_directory(BaseHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
 
         if context['is_admin']:
             employee_query = models.Account.all().filter('is_employee =', True)#.filter('username !=', 'mike')
@@ -166,6 +188,7 @@ class view_directory(BaseHandler):
 class edit_profile(BaseHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
 
         if context['is_employee']:
             employee = models.Account.all().filter('username =', context['username'])[0]
@@ -209,6 +232,7 @@ class delete_employee(webapp2.RequestHandler):
 class view_customers(webapp2.RequestHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
 
         if context['is_admin']:
             customer_query = models.Account.all().filter('is_customer =', True)
@@ -227,6 +251,7 @@ class view_customers(webapp2.RequestHandler):
 class apply(webapp2.RequestHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
         upload_url = blobstore.create_upload_url('/upload')
         upload_url = upload_url.replace('http://localhost:8080', self.request.get('host'))
         context['upload_url'] = upload_url
@@ -249,6 +274,7 @@ class resume_upload(blobstore_handlers.BlobstoreUploadHandler):
 class thanks(webapp2.RequestHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
         path = os.path.join(os.path.dirname(__file__), 'templates/thanks.html')
         self.response.out.write(template.render(path, context))
 
@@ -274,6 +300,7 @@ class resume_delete(webapp2.RequestHandler):
 class view_resumes(webapp2.RequestHandler):
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
         resumes = models.Resume.all().fetch(10000)
         context['resumes'] = resumes
         path = os.path.join(os.path.dirname(__file__),
@@ -294,48 +321,16 @@ class login(BaseHandler):
             # Currently no message is attached to the exceptions
 
         if username:
-            account_query = models.Account.all().filter('username =', username)
-            account = account_query.fetch(1)
-            if account:
-                account = account[0]
-
-                if password == account.password:
-
-                    self.response.headers.add_header(
-                        'Set-Cookie',
-                        'username=%s; path=/' % str(username))
-
-                    self.response.headers.add_header(
-                        'Set-Cookie',
-                        'is_admin=%s; path=/' % account.is_admin)
-
-                    self.response.headers.add_header(
-                        'Set-Cookie',
-                        'is_employee=%s; path=/' % account.is_employee)
-
-                else:
-                    self.redirect('/invalid_password')
-
-            else:
-                self.redirect('/register')
-
+            try:
+                auth.get_auth().get_user_by_password(username, password)
+            except Exception, e:
+                logging.warning(e)
 
         self.redirect('/')
 
 class logout(webapp2.RequestHandler):
     def post(self):
-        self.response.headers.add_header(
-            'Set-Cookie',
-            'username=None; expires=Fri, 31-Dec-1970 23:59:59 GMT; path=/')
-
-        self.response.headers.add_header(
-            'Set-Cookie',
-            'is_admin=None; expires=Fri, 31-Dec-1970 23:59:59 GMT; path=/')
-
-        self.response.headers.add_header(
-            'Set-Cookie',
-            'is_customer=None; expires=Fri, 31-Dec-1970 23:59:59 GMT; path=/')
-
+        auth.get_auth().unset_session()
         self.redirect('/')
 
 
@@ -348,6 +343,7 @@ class test(BaseHandler):
 #    @user_required
     def get(self):
         context = utils.get_context(self.request)
+        insert_details(context)
 
         #
         current_session = auth.get_auth().get_user_by_session()
